@@ -129,31 +129,32 @@ class Segment(NamedTuple):
 
         cell_size = get_character_cell_size
 
-        pos = int((cut / cell_length) * len(text))
+        # Scan forward from the start, accumulating cell positions
+        pos = 0
+        for i, char in enumerate(text):
+            char_cell = cell_size(char)
+            if char_cell == 0:
+                # Zero-width characters (newlines, control chars) are
+                # transparent for positioning -- keep scanning
+                continue
+            if pos + char_cell > cut:
+                # The cut falls at the boundary of this character.
+                # If we're exactly 1 cell over with a double-width char,
+                # replace it with a space on each side (split the char).
+                if pos == cut - 1 and cell_size(char) == 2:
+                    return (
+                        _Segment(text[:i] + " ", style, control),
+                        _Segment(" " + text[i + 1 :], style, control),
+                    )
+                # Otherwise cut falls before this character
+                return (
+                    _Segment(text[:i], style, control),
+                    _Segment(text[i:], style, control),
+                )
+            pos += char_cell
 
-        while True:
-            before = text[:pos]
-            cell_pos = cell_len(before)
-            out_by = cell_pos - cut
-            if not out_by:
-                return (
-                    _Segment(before, style, control),
-                    _Segment(text[pos:], style, control),
-                )
-            if out_by == -1 and cell_size(text[pos]) == 2:
-                return (
-                    _Segment(text[:pos] + " ", style, control),
-                    _Segment(" " + text[pos + 1 :], style, control),
-                )
-            if out_by == +1 and cell_size(text[pos - 1]) == 2:
-                return (
-                    _Segment(text[: pos - 1] + " ", style, control),
-                    _Segment(" " + text[pos:], style, control),
-                )
-            if cell_pos < cut:
-                pos += 1
-            else:
-                pos -= 1
+        # Cut is at or past the end of the text
+        return segment, _Segment("", style, control)
 
     def split_cells(self, cut: int) -> Tuple["Segment", "Segment"]:
         """Split segment in to two segments at the specified column.
